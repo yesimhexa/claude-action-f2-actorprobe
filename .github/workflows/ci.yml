@@ -1,0 +1,43 @@
+name: CI
+
+# Minimal upstream workflow. Named "CI" so workflow-b-downstream.yml's
+# `workflows: ["CI"]` filter matches it. Deliberately trivial — its only
+# job is to exist and complete, so workflow_run fires.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump triggering context (upstream / workflow A)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            const dump = {
+              scenario: "workflow_A_upstream",
+              context_actor: context.actor,
+              github_actor_env: process.env.GITHUB_ACTOR || null,
+              github_actor_id_env: process.env.GITHUB_ACTOR_ID || null,
+              github_triggering_actor_env: process.env.GITHUB_TRIGGERING_ACTOR || null,
+              eventName: context.eventName,
+              sender_login: context.payload.sender ? context.payload.sender.login : null,
+              sender_type: context.payload.sender ? context.payload.sender.type : null,
+              ref: process.env.GITHUB_REF || null,
+              sha: process.env.GITHUB_SHA || null,
+              repository: process.env.GITHUB_REPOSITORY || null,
+              pr_user_login: pr ? pr.user.login : null,
+              pr_head_repo_full_name: pr ? pr.head.repo.full_name : null,
+              pr_base_repo_full_name: pr ? pr.base.repo.full_name : null,
+              run_attempt: process.env.GITHUB_RUN_ATTEMPT || null,
+            };
+            console.log("=== WORKFLOW A (upstream) CONTEXT DUMP ===");
+            console.log(JSON.stringify(dump, null, 2));
+
+      - name: Trivial build step
+        run: echo "ok"

@@ -1,0 +1,105 @@
+name: Downstream workflow_run Probe
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [requested, in_progress, completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1 — dump every field the audit needs, from the REAL event.
+      # Uses actions/github-script (real JS object access) instead of
+      # ${{ }} template interpolation into a shell block — the latter is
+      # exactly the command-injection class this project's own
+      # examples/test-failure-analysis.yml had to be fixed for (263993d).
+      - name: Dump full raw context (downstream / workflow B)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const wr = context.payload.workflow_run || {};
+            const dump = {
+              scenario: "workflow_B_downstream_workflow_run",
+              action: context.payload.action,
+              github_actor_env: process.env.GITHUB_ACTOR || null,
+              github_actor_id_env: process.env.GITHUB_ACTOR_ID || null,
+              github_triggering_actor_env: process.env.GITHUB_TRIGGERING_ACTOR || null,
+              context_actor: context.actor,
+              sender_login: context.payload.sender ? context.payload.sender.login : null,
+              sender_type: context.payload.sender ? context.payload.sender.type : null,
+              workflow_run_actor_login: wr.actor ? wr.actor.login : null,
+              workflow_run_actor_type: wr.actor ? wr.actor.type : null,
+              workflow_run_triggering_actor_login: wr.triggering_actor ? wr.triggering_actor.login : null,
+              workflow_run_triggering_actor_type: wr.triggering_actor ? wr.triggering_actor.type : null,
+              workflow_run_event: wr.event,
+              workflow_run_head_repository_full_name: wr.head_repository ? wr.head_repository.full_name : null,
+              workflow_run_repository_full_name: wr.repository ? wr.repository.full_name : null,
+              workflow_run_head_branch: wr.head_branch,
+              workflow_run_head_sha: wr.head_sha,
+              workflow_run_run_attempt: wr.run_attempt,
+              workflow_run_id: wr.id,
+              workflow_run_pull_requests: wr.pull_requests || [],
+              divergence_payloadActor_vs_contextActor: wr.actor ? (wr.actor.login !== context.actor) : null,
+              divergence_payloadActor_vs_triggeringActor: wr.actor && wr.triggering_actor ? (wr.actor.login !== wr.triggering_actor.login) : null,
+            };
+            console.log("=== WORKFLOW B (workflow_run) FIELD DUMP ===");
+            console.log(JSON.stringify(dump, null, 2));
+            console.log("=== RAW github.event.workflow_run (unfiltered) ===");
+            console.log(JSON.stringify(wr, null, 2));
+            fs.writeFileSync('wr-dump.json', JSON.stringify(dump, null, 2));
+            fs.writeFileSync('wr-raw.json', JSON.stringify(wr, null, 2));
+
+      # Step 2 — ask the REAL GitHub API (not a guess, not a mock) what
+      # permission level each actor candidate actually holds on this repo.
+      # This is the exact endpoint checkActorWritePermissions() calls.
+      - name: Query REAL collaborator-permission level for both actor candidates
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const wr = context.payload.workflow_run || {};
+            const candidates = [context.actor, wr.actor ? wr.actor.login : null].filter(Boolean);
+            for (const username of [...new Set(candidates)]) {
+              try {
+                const res = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  username,
+                });
+                console.log(`REAL permission for ${username}: ${res.data.permission}`);
+              } catch (e) {
+                console.log(`REAL permission lookup for ${username} FAILED: ${e.message}`);
+              }
+            }
+
+      # Step 3 — check out the EXACT audited commit of claude-code-action.
+      - name: Checkout claude-code-action authorization source at audited HEAD
+        uses: actions/checkout@v4
+        with:
+          repository: anthropics/claude-code-action
+          ref: 97c53473391bff1901034d4b454b5bac7ab7a029
+          path: cca-src
+
+      - name: Copy captured real payload into checkout
+        run: |
+          cp wr-dump.json cca-src/wr-dump.json
+          cp wr-raw.json cca-src/wr-raw.json
+
+      # Step 4 — feed the REAL captured actor values into the REAL,
+      # unmodified checkWritePermissions()/checkHumanActor(), calling the
+      # REAL GitHub REST API (this job's own token) for permission lookups.
+      # No reimplementation. No mock Octokit at this stage.
+      - name: Run REAL authorization functions against REAL payload + REAL API
+        working-directory: cca-src
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_ALLOWED_BOTS: ${{ vars.TEST_ALLOWED_BOTS || '' }}
+        run: |
+          npm install --no-save --no-audit --no-fund --legacy-peer-deps \
+            @actions/core@1.10.1 @actions/github@6.0.1 @octokit/rest@21.1.1
+          npx --yes tsx ../real-auth-probe.mts
