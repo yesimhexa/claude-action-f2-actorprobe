@@ -91,15 +91,17 @@ jobs:
           ref: 97c53473391bff1901034d4b454b5bac7ab7a029
           path: cca-src
 
-      - name: Copy captured real payload into checkout
+      - name: Copy captured real payload + probe script into checkout
         run: |
           cp wr-dump.json cca-src/wr-dump.json
           cp wr-raw.json cca-src/wr-raw.json
+          cp real-auth-probe.mts cca-src/real-auth-probe.mts
 
       # Step 4 — feed the REAL captured actor values into the REAL,
       # unmodified checkWritePermissions()/checkHumanActor(), calling the
       # REAL GitHub REST API (this job's own token) for permission lookups.
       # No reimplementation. No mock Octokit at this stage.
+      # Runs from inside cca-src so ./src/... imports resolve correctly.
       - name: Run REAL authorization functions against REAL payload + REAL API
         working-directory: cca-src
         env:
@@ -108,4 +110,4 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund --legacy-peer-deps \
             @actions/core@1.10.1 @actions/github@6.0.1 @octokit/rest@21.1.1
-          npx --yes tsx ../real-auth-probe.mts
+          npx --yes tsx ./real-auth-probe.mts
