@@ -3,7 +3,7 @@ name: Downstream workflow_run Probe
 on:
   workflow_run:
     workflows: ["CI"]
-    types: [requested, in_progress, completed]
+    types: [completed]
 
 permissions:
   contents: read
@@ -13,6 +13,12 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
+      # Step 0 — check out THIS repo first (real-auth-probe.mts lives here).
+      # Must run before any step writes scratch files into GITHUB_WORKSPACE,
+      # since checkout's default `git clean -ffdx` would delete them.
+      - name: Checkout probe repo
+        uses: actions/checkout@v4
+
       # Step 1 — dump every field the audit needs, from the REAL event.
       # Uses actions/github-script (real JS object access) instead of
       # ${{ }} template interpolation into a shell block — the latter is
