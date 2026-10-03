@@ -1,0 +1,25 @@
+name: Bot Dispatch Test
+
+# Tests whether GitHub's anti-recursion restriction on the ambient
+# GITHUB_TOKEN ("events triggered by GITHUB_TOKEN will not create a new
+# workflow run") also blocks workflow_dispatch calls made with it, or only
+# push/PR-style side-effect events.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch CI using this job's own ambient GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            "repos/${{ github.repository }}/actions/workflows/ci.yml/dispatches" \
+            -f ref=master
+          echo "Dispatch call completed (exit code above reflects success/failure)."
