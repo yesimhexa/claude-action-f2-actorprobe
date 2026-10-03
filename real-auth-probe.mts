@@ -15,11 +15,19 @@ const raw = JSON.parse(readFileSync("wr-raw.json", "utf-8"));
 const contextActor: string = dump.context_actor || dump.github_actor_env;
 const allowedBots = process.env.TEST_ALLOWED_BOTS || "";
 
+const realRepoFullName = process.env.GITHUB_REPOSITORY || dump.repository || "";
+const [realOwner, realRepo] = realRepoFullName.split("/");
+
 const context = createMockAutomationContext({
   eventName: "workflow_run",
   eventAction: dump.action,
   actor: contextActor,
   payload: { action: dump.action, workflow_run: raw } as any,
+  repository: {
+    owner: realOwner,
+    repo: realRepo,
+    full_name: realRepoFullName,
+  },
   inputs: { allowedBots },
 });
 
