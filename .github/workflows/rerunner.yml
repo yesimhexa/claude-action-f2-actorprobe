@@ -1,0 +1,35 @@
+name: Bot Rerunner
+
+# Manually dispatched. Calls the rerun API using this job's OWN ambient
+# GITHUB_TOKEN (authenticates as github-actions[bot], NOT as whoever
+# dispatched this workflow) against a target run id. Tests whether doing
+# so makes github-actions[bot] the triggering_actor on the rerun while
+# the original run's actor (privilege source) stays stable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_run_id:
+        required: true
+        type: string
+
+permissions:
+  actions: write
+
+jobs:
+  rerun:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump our own actor identity for this job
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log("This job's own context.actor:", context.actor);
+            console.log("This job's own sender:", context.payload.sender ? context.payload.sender.login : null);
+
+      - name: Rerun target run using this job's own GITHUB_TOKEN (github-actions[bot])
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            "repos/${{ github.repository }}/actions/runs/${{ inputs.target_run_id }}/rerun"
